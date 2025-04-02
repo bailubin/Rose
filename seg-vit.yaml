@@ -1,0 +1,163 @@
+# arguments for segment downstream task
+seg:
+  dataset: landuse
+  nclass: 9
+  crop_size: 224
+  data_root: /home/blb/python/2023-multimodal/data/downstream_data/chicago
+  batch_size: 16
+  epochs: 30
+  finetune:
+    lr: 0.00002
+    lr_multi: 100.0
+  linear:
+    lr: 0.02
+  criterion:
+    name: CELoss
+    kwargs:
+        ignore_index: 255
+  decoder:
+    name: linear #mask_transformer
+  #  drop_path_rate: 0.0
+  #  dropout: 0.0
+  #  n_layers: 2
+
+seg_sgp:
+  dataset: landuse
+  nclass: 9
+  crop_size: 224
+  data_root: /home/blb/python/2023-multimodal/data/downstream_data/singapore
+  batch_size: 16
+  epochs: 50
+  finetune:
+    lr: 0.000002
+    lr_multi: 100.0
+  linear:
+    lr: 0.02 # 0.02
+  criterion:
+    name: CELoss
+    kwargs:
+        ignore_index: 255
+  decoder:
+    name: linear
+#    name: mask_transformer
+#    drop_path_rate: 0.0
+#    dropout: 0.1
+#    n_layers: 2
+
+seg_ccg:
+  dataset: landuse
+  nclass: 9
+  crop_size: 224
+  data_root: /home/blb/python/2023-multimodal/data/downstream_data/chicago1
+  batch_size: 16
+  epochs: 50
+  finetune:
+    lr: 0.000002
+    lr_multi: 100.0
+  linear:
+    lr: 0.02
+  criterion:
+    name: CELoss
+    kwargs:
+        ignore_index: 255
+  decoder:
+    name: linear
+#    name: mask_transformer
+#    drop_path_rate: 0.0
+#    dropout: 0.1
+#    n_layers: 2
+
+seg_sz:
+  dataset: landuse
+  nclass: 9
+  crop_size: 224
+  data_root: /home/blb/python/2023-multimodal/data/downstream_data/shenzhen1
+  batch_size: 16
+  epochs: 30
+  finetune:
+    lr: 0.000002
+    lr_multi: 100.0
+  linear:
+    lr: 0.02
+  criterion:
+    name: CELoss
+    kwargs:
+        ignore_index: 255
+  decoder:
+#    name: linear
+    name: mask_transformer
+    drop_path_rate: 0.0
+    dropout: 0.1
+    n_layers: 2
+
+sgp_pop:
+  dataset: pop
+  crop_size: 224
+  data_root: /home/blb/python/2023-multimodal/data/downstream_data/singapore
+  epochs: 30
+  batch_size: 4
+  finetune:
+    lr: 0.00001
+    lr_multi: 100000.0
+  linear:
+    lr: 1
+
+ccg_pop:
+  dataset: pop
+  crop_size: 224
+  data_root: /home/blb/python/2023-multimodal/data/downstream_data/chicago1
+  epochs: 30
+  batch_size: 4
+  finetune:
+    lr: 0.00001
+    lr_multi: 100000.0
+  linear:
+    lr: 1
+
+sz_pop:
+  dataset: pop
+  crop_size: 224
+  data_root: /home/blb/python/2023-multimodal/data/downstream_data/shenzhen1
+  epochs: 30
+  batch_size: 4
+  finetune:
+    lr: 0.00001
+    lr_multi: 100000.0
+  linear:
+    lr: 1
+
+ccg_co2:
+  dataset: co2
+  crop_size: 224
+  data_root: /home/blb/python/2023-multimodal/data/downstream_data/chicago1
+  epochs: 30
+  batch_size: 4
+  finetune:
+    lr: 0.00001
+    lr_multi: 1000.0
+  linear:
+    lr: 0.01
+
+sgp_co2:
+  dataset: co2
+  crop_size: 224
+  data_root: /home/blb/python/2023-multimodal/data/downstream_data/singapore
+  epochs: 30
+  batch_size: 4
+  finetune:
+    lr: 0.00001
+    lr_multi: 1000.0
+  linear:
+    lr: 0.01
+
+sz_co2:
+  dataset: co2
+  crop_size: 224
+  data_root: /home/blb/python/2023-multimodal/data/downstream_data/shenzhen1
+  epochs: 30
+  batch_size: 4
+  finetune:
+    lr: 0.00001
+    lr_multi: 1000.0
+  linear:
+    lr: 0.01
