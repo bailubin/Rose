@@ -16,7 +16,7 @@ timm==0.6.12
 
 ## Pretraining Dataset
 We collect RS images (Source: Bing Map and Arcgis Map) and OSM data in Shenzhen (China), Singapore, Chicago (U.S.). 
-The pretraining dataset can be found at: 
+The pretraining dataset can be found at: https://disk.pku.edu.cn/link/AABD817C78DFEE4E87A1D6C9777F768B60
 
 ## pretraining
 ```
