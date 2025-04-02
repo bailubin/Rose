@@ -36,3 +36,15 @@ python evaluate_seg_fusion.py
 python evaluate_pop_fusion.py
 ```
 Downstream evaluation dataset will come soon
+
+```bash
+@article{bai2025integrating,
+  title={Integrating remote sensing with OpenStreetMap data for comprehensive scene understanding through multi-modal self-supervised learning},
+  author={Bai, Lubin and Zhang, Xiuyuan and Wang, Haoyu and Du, Shihong},
+  journal={Remote Sensing of Environment},
+  volume={318},
+  pages={114573},
+  year={2025},
+  publisher={Elsevier}
+}
+```
