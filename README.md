@@ -25,7 +25,7 @@ python train_rose.py \
    save_root_dir=path_to_your_save_root
    save_dir=rose-path_to_your_save_dir
 ```
-To check if the pre-training is working properly, one can refer to the train logs in loss_record.txt.
+To check if the pretraining is working properly, one can refer to the train logs in loss_record.txt.
 ## downstream tasks
 ```
 # semantic segmentation task
@@ -35,7 +35,7 @@ python evaluate_seg_fusion.py
 # pop and CO2 tasks
 python evaluate_pop_fusion.py
 ```
-Downstream evaluation dataset will come soon
+Downstream evaluation dataset will come soon.
 
 ```bash
 @article{bai2025integrating,
