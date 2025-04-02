@@ -22,5 +22,15 @@ python train_rose.py \
    batch_size=64 \
    total_epoch=120 \
    schedule=[90,110]\
-   save_dir= 'rose-singapore'
+   save_root_dir=path_to_your_save_root
+   save_dir=rose-path_to_your_save_dir
+```
+## downstream tasks
+```
+# semantic segmentation task
+python evaluate_seg_fusion.py
+```
+```
+# pop and CO2 tasks
+python evaluate_pop_fusion.py
 ```
