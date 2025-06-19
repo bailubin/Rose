@@ -1,137 +1,333 @@
+import fiona
+from shapely.geometry import shape, Point, Polygon, LineString
+from shapely import box,relate
+from shapely.strtree import STRtree
 import numpy as np
-import logging
-import os
+from shapely import box
+from collections import defaultdict
+import re
+import shapely
+import yaml
 
+def get_rtree(shp_path):
+    c = fiona.open(shp_path)
 
-def count_params(model):
-    param_num = sum(p.numel() for p in model.parameters())
-    return param_num / 1e6
+    feature_list = []
+    geom_list = []
+    coord_dict={}
+    duplicate_num=0
 
+    for feature in c:
+        geometry = feature['geometry']
+        geom = shape(geometry)
+        coord_key=str(geometry['coordinates'])
 
-def color_map(dataset='pascal'):
-    cmap = np.zeros((256, 3), dtype='uint8')
-
-    if dataset == 'pascal' or dataset == 'coco':
-        def bitget(byteval, idx):
-            return (byteval & (1 << idx)) != 0
-
-        for i in range(256):
-            r = g = b = 0
-            c = i
-            for j in range(8):
-                r = r | (bitget(c, 0) << 7-j)
-                g = g | (bitget(c, 1) << 7-j)
-                b = b | (bitget(c, 2) << 7-j)
-                c = c >> 3
-
-            cmap[i] = np.array([r, g, b])
-
-    elif dataset == 'cityscapes':
-        cmap[0] = np.array([128, 64, 128])
-        cmap[1] = np.array([244, 35, 232])
-        cmap[2] = np.array([70, 70, 70])
-        cmap[3] = np.array([102, 102, 156])
-        cmap[4] = np.array([190, 153, 153])
-        cmap[5] = np.array([153, 153, 153])
-        cmap[6] = np.array([250, 170, 30])
-        cmap[7] = np.array([220, 220, 0])
-        cmap[8] = np.array([107, 142, 35])
-        cmap[9] = np.array([152, 251, 152])
-        cmap[10] = np.array([70, 130, 180])
-        cmap[11] = np.array([220, 20, 60])
-        cmap[12] = np.array([255,  0,  0])
-        cmap[13] = np.array([0,  0, 142])
-        cmap[14] = np.array([0,  0, 70])
-        cmap[15] = np.array([0, 60, 100])
-        cmap[16] = np.array([0, 80, 100])
-        cmap[17] = np.array([0,  0, 230])
-        cmap[18] = np.array([119, 11, 32])
-
-    return cmap
-
-
-class AverageMeter(object):
-    """Computes and stores the average and current value"""
-
-    def __init__(self, length=0):
-        self.length = length
-        self.reset()
-
-    def reset(self):
-        if self.length > 0:
-            self.history = []
+        if coord_key in coord_dict:
+            duplicate_num+=1
         else:
-            self.count = 0
-            self.sum = 0.0
-        self.val = 0.0
-        self.avg = 0.0
+            feature_list.append(feature)
+            geom_list.append(geom)
+            coord_dict[coord_key]=feature
 
-    def update(self, val, num=1):
-        if self.length > 0:
-            # currently assert num==1 to avoid bad usage, refine when there are some explict requirements
-            assert num == 1
-            self.history.append(val)
-            if len(self.history) > self.length:
-                del self.history[0]
+    c.close()
 
-            self.val = self.history[-1]
-            self.avg = np.mean(self.history)
+    rtree = STRtree(geom_list)
+    print(shp_path, "重复元素的数量",duplicate_num, "总数量：", len(geom_list))
+
+    return rtree, feature_list
+
+def coord2pixel(x_geo, y_geo, ds_geo):
+    """
+    :param x_geo: 输入x地理坐标
+    :param y_geo: 输入y地理坐标
+    :param ds_geo: 输入仿射地理变换参数
+    :return: 返回x,y像素坐标
+    """
+    y = ((y_geo - ds_geo[3] - ds_geo[4] / ds_geo[1] * x_geo + ds_geo[4] / ds_geo[1] * ds_geo[
+        0]) / (ds_geo[5] - ds_geo[4] / ds_geo[1] * ds_geo[2]))
+    x = ((x_geo - ds_geo[0] - y * ds_geo[2]) / ds_geo[1])
+    return int(x), int(y)
+
+def pixel2coord(x, y, ds_geo):
+    x_geo = ds_geo[0]+ds_geo[1]*x + y*ds_geo[2]
+    y_geo = ds_geo[3]+ds_geo[4]*x + y*ds_geo[5]
+    return x_geo, y_geo
+
+
+def get_current_shp(current_region, all_shp_rtree, all_shp_list):
+
+    current_shp_indexes = all_shp_rtree.query(current_region).tolist()
+
+    current_geometry, current_feature = [], []
+    for current_shp_index in current_shp_indexes:
+        shp = all_shp_rtree.geometries.take(current_shp_index)
+        if shp.intersects(current_region):
+            c_g=shp.intersection(current_region)
+            current_geometry.append(c_g)
+            current_feature.append(all_shp_list[current_shp_index])
+
+    return current_geometry, current_feature
+
+def get_spatial_relation(all_geo, all_feat):
+
+    geo_num=all_geo.shape[0]
+    r_m=np.zeros((geo_num,geo_num)).astype(int)
+    for i in range(geo_num):
+        p_i=all_geo[i]
+        for j in range(i+1, geo_num):
+
+            p_j=all_geo[j]
+            relation=relate(p_j,p_i) #j的面积比i小
+            # 判断空间关系,disjoint 1, toches 2, overlaps/crosses 3, contains 4, within 5, equals 0, other 6
+            # disjoint
+            if re.match("FF.{1,2}FF.{4,8}",relation) is not None:
+                r_m[i,j]=1
+                r_m[j,i]=1
+            #toches
+            elif re.match("F[0,1,2,T].{7,14}",relation) is not None \
+            or re.match("F.{2,4}[0,1,2,T].{5,10}",relation) is not None \
+            or re.match("F.{3,6}[0,1,2,T].{4,8}",relation) is not None:
+                r_m[i,j]=2
+                r_m[j,i]=2
+            # within
+            elif re.match("[0,1,2,T].{1,2}F.{2,4}F.{3,6}", relation) is not None:
+                r_m[i, j] = 4
+                r_m[j, i] = 5
+            #overlaps
+            elif re.match("[0,1,2,T].{1,2}[0,1,2,T].{6,12}",relation) is not None:
+                r_m[i,j]=3
+                r_m[j,i]=3
+            # unknown or mask
+            else:
+                r_m[i,j]=6
+                r_m[j,i]=6
+    return r_m
+
+def get_absolute_pos(geo_center, region_origin, delta):
+    ab_coords=((geo_center-region_origin)/delta).astype(int)
+    print(ab_coords)
+    if ab_coords[0]==0:
+        if ab_coords[1]==0:
+            return "bottom left"
+        elif ab_coords[1]==1:
+            return "left"
         else:
-            self.val = val
-            self.sum += val * num
-            self.count += num
-            self.avg = self.sum / self.count
-
-
-def intersectionAndUnion(output, target, K, ignore_index=255):
-    # 'K' classes, output and target sizes are N or N * L or N * H * W, each value in range 0 to K - 1.
-    assert output.ndim in [1, 2, 3]
-    assert output.shape == target.shape
-    output = output.reshape(output.size).copy()
-    target = target.reshape(target.size)
-    output[np.where(target == ignore_index)[0]] = ignore_index
-    intersection = output[np.where(output == target)[0]]
-    area_intersection, _ = np.histogram(intersection, bins=np.arange(K + 1))
-    area_output, _ = np.histogram(output, bins=np.arange(K + 1))
-    area_target, _ = np.histogram(target, bins=np.arange(K + 1))
-    area_union = area_output + area_target - area_intersection
-    return area_intersection, area_union, area_target
-
-def F1Score(output, target, K):
-    output=output.flatten()
-    target=target.flatten()
-    mask = (target >= 0) & (target < K)
-    hist = np.bincount(
-        K * target[mask].astype(int) + output[mask],  # 相当于坐标索引
-        minlength=K ** 2,
-    ).reshape(K, K)
-
-    # precision_cls = np.diag(hist) / hist.sum(axis=1)
-    # recall_cls = np.diag(hist) / hist.sum(axis=0)
-    # print(precision_cls,recall_cls)
-    # F1_cl = precision_cls * recall_cls * 2 / (precision_cls + recall_cls)
-    # mean_f1 = np.nanmean(F1_cl)
-    return hist
-
-
-logs = set()
-
-
-def init_log(name, level=logging.INFO):
-    if (name, level) in logs:
-        return
-    logs.add((name, level))
-    logger = logging.getLogger(name)
-    logger.setLevel(level)
-    ch = logging.StreamHandler()
-    ch.setLevel(level)
-    if "SLURM_PROCID" in os.environ:
-        rank = int(os.environ["SLURM_PROCID"])
-        logger.addFilter(lambda record: rank == 0)
+            return "top left"
+    elif ab_coords[0]==1:
+        if ab_coords[1]==0:
+            return "bottom center"
+        elif ab_coords[1]==1:
+            return "center"
+        else:
+            return "top center"
     else:
-        rank = 0
-    format_str = "[%(asctime)s][%(levelname)8s] %(message)s"
-    formatter = logging.Formatter(format_str)
-    ch.setFormatter(formatter)
-    logger.addHandler(ch)
-    return logger
+        if ab_coords[1]==0:
+            return "bottom right"
+        elif ab_coords[1]==1:
+            return "right"
+        else:
+            return "top right"
+
+
+def get_relation_text(sub_ob_rm, all_feat, sp_code_relation):
+
+    ob_label_dict=defaultdict(list)
+    ob_label_dictu=defaultdict(list)
+    relations=[]
+    labels=[]
+
+    sub_ob_rm_unique=np.unique(sub_ob_rm)
+    for sp_code in sub_ob_rm_unique:
+        if sp_code!=1 and sp_code!=0 and sp_code!=6:
+            sp_relation=sp_code_relation[sp_code]
+            pos_i=np.where(sub_ob_rm==sp_code)[0]
+
+            for i in range(pos_i.shape[0]):
+                pos=pos_i[i]
+                f_tag_ob=all_feat[pos]['properties']['f_tag']
+                label_ob=all_feat[pos]['properties'][f_tag_ob]
+
+                if f_tag_ob!='building':
+                    ob_label_dict[sp_relation].append(label_ob)
+                else:
+                    if label_ob!='building':
+                        ob_label_dict[sp_relation].append(label_ob+' building')
+                    else:
+                        ob_label_dict[sp_relation].append('building')
+            ob_label_dictu[sp_relation]=list(np.unique(ob_label_dict[sp_relation]))
+
+    # 将地物类别整理成句子
+    for key in ob_label_dictu:
+
+        value_list=ob_label_dictu[key]
+        ob_label_string=""
+        if len(value_list) >1 and 'building' in value_list:
+            value_list.remove('building')
+            value_list.append('other buildings')
+
+        if len(value_list) ==1:
+            ob_label_string=value_list[0]
+        else:
+            for v_i, value in enumerate(value_list):
+                if v_i==len(value_list)-1:
+                    ob_label_string=ob_label_string+'and '+value
+                else:
+                    ob_label_string=ob_label_string+value+', '
+        relations.append(key)
+        labels.append(ob_label_string)
+
+    return relations, labels
+
+def get_main_class(all_area, all_label):
+    all_label_u=list(np.unique(all_label))
+    cls_area=[]
+    cls_index=[]
+    for label in all_label_u:
+        cls_area.append(all_area[all_label==label].sum())
+        cls_index.append(np.where(all_label==label)[0])
+
+    zip_a_l = zip(cls_area, all_label_u)
+    sorted_zip = sorted(zip_a_l, key=lambda x: x[0], reverse=True)
+    cls_area, cls_label = zip(*sorted_zip)
+    cls_area, cls_label, cls_index = np.array(cls_area), np.array(cls_label), np.array(cls_index)
+    return cls_area, cls_label, cls_index
+
+def get_class_text(all_cls):
+    cls_text=""
+    if len(all_cls)>5:
+        all_cls=np.random.choice(all_cls, size=5,replace=False) #选择的元素不能重复
+    for i in range(len(all_cls)-1):
+        cls_text=cls_text+all_cls[i]+", "
+    if len(all_cls)>1:
+        cls_text=cls_text+"and "+all_cls[-1]
+    else:
+        cls_text+=all_cls[-1]
+    return cls_text
+
+
+
+def get_main_region(all_area, r_m, ab_threshold=0.05, cv_threshold=0.35):
+    if all_area.shape[0]==0:
+        return []
+    if all_area[0]<ab_threshold:
+        return []
+    main_index=[0]
+    for i in range(1, all_area.shape[0]):
+        flag=True
+        # disjoint(1) or toches(2)
+        for ind in main_index:
+            # 相交了
+            if r_m[i][ind]>2:
+                flag=False
+                break
+        if flag:
+            main_index.append(i)
+        main_area=all_area[main_index]
+        cv=main_area.std()/main_area.mean()
+        print(cv)
+        if cv>cv_threshold:
+            main_index.pop()
+            break
+
+    # if all_area[main_index].sum()/all_area.sum()<0.3:
+    #     return []
+
+    return main_index
+
+def select_main_region(main_index, main_labels, r_m):
+    main_label_u = np.unique(main_labels)
+    if main_label_u.shape[0] > 3:
+        select_labels = np.random.choice(main_label_u, size=3, replace=False)
+    else:
+        select_labels = main_label_u
+
+    # 获得各个类别代表区域的索引
+    select_index = []
+    for label in select_labels:
+        # 获得当前类别的所有索引
+        cur_index = main_index[np.where(main_labels == label)[0]]
+        # 找出当前类别中空间关系最复杂的区域作为代表区域
+        represent_index = cur_index[0]
+        relation_num = 0
+        for ind in cur_index:
+            cur_r_m = r_m[ind]
+            cur_relation_num = cur_r_m[(cur_r_m != 0) & (cur_r_m != 1) & (cur_r_m != 6)].shape[0]
+            if cur_relation_num > relation_num:
+                represent_index = ind
+        select_index.append(represent_index)
+    return select_index, select_labels
+
+def get_info_rich_region(all_area, all_label, r_m, ab_threshold=0.05, cls_threshold=3):
+    rich_index=[]
+    rich_label=[]
+    for i in range(all_area.shape[0]):
+        if all_area[i]<ab_threshold:
+            break
+        else:
+            inside_index=np.where(r_m[i]==4)[0]
+            inside_label=all_label[inside_index]
+            inside_label_u=np.unique(inside_label)
+            if inside_label_u.shape[0]>cls_threshold:
+                rich_index.append(i)
+                rich_label.append(inside_label_u)
+    return rich_index, rich_label
+
+
+def get_main_road(croad_geo, cregion, all_geo, all_label, d_threshold=5e-4, l_threshold=5e-3):
+    lng_left, lat_bottom=np.min(cregion.boundary.coords, axis=0)+1e-6
+    lng_right, lat_top=np.max(cregion.boundary.coords, axis=0)-1e-6
+    cregion = box(lng_left, lat_bottom, lng_right, lat_top, ccw=False)
+    cross_inds=[]
+    for i in range(len(croad_geo)):
+        if croad_geo[i].length>l_threshold and shapely.crosses(croad_geo[i], cregion):
+            cross_inds.append(i)
+
+    cross_inds_true=[]
+    in_pos=[]
+    out_pos=[]
+    along_labels=[]
+    main_ind=-1
+    main_num=-1
+    if len(cross_inds)>0:
+        for ind in cross_inds:
+            road=croad_geo[ind]
+            road_in, road_out=road.boundary.geoms[0].coords[0], road.boundary.geoms[-1].coords[0]
+            if road_in[0]<lng_left:
+                in_p='left'
+            elif road_in[0]>lng_right:
+                in_p='right'
+            elif road_in[1]<lat_bottom:
+                in_p='bottom'
+            elif road_in[1]>lat_top:
+                in_p='top'
+            else:
+                in_p=''
+
+            if road_out[0]<lng_left:
+                out_p='left'
+            elif road_out[0]>lng_right:
+                out_p='right'
+            elif road_out[1]<lat_bottom:
+                out_p='bottom'
+            elif road_out[1]>lat_top:
+                out_p='top'
+            else:
+                out_p=''
+
+            if in_p!='' and out_p!='' and in_p!=out_p:
+                in_pos.append(in_p)
+                out_pos.append(out_p)
+                cross_inds_true.append(ind)
+
+                distances=[]
+                for geo in all_geo:
+                    distances.append(shapely.distance(road, geo))
+                distances=np.array(distances)
+                a_labels=np.unique(all_label[distances<d_threshold])
+                along_labels.append(a_labels)
+                if a_labels.shape[0]>main_num:
+                    main_ind=ind
+
+    return in_pos,out_pos,along_labels,cross_inds_true, main_ind
+
+
